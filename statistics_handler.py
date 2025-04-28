@@ -5,36 +5,39 @@ class Statistics:
     def __init__(self, parent, data_handler):
         self.parent = parent
         self.data_handler = data_handler
-        self.distance_threshold_var = tk.StringVar()  # EDIT: Changed from tk.IntVar() to tk.StringVar() to allow manual validation and prevent app crash when non-integer input is entered
+        self.distance_threshold_var = tk.StringVar()  
+        # EDIT: Changed from tk.IntVar() to tk.StringVar() to manually validate input and avoid crashes
 
     def show_statistics(self):
         """Displays statistics in the provided frame."""
         for widget in self.parent.winfo_children():
             widget.destroy()
 
-        df = pd.DataFrame(self.data_handler.data)
-        df['Distance'] = pd.to_numeric(df['Distance'], errors='coerce')  # Keep original logic for converting distance safely
+        self.df = pd.DataFrame(self.data_handler.data)  
+        # EDIT (Bug 6): Load the DataFrame once here and store as self.df to reuse later (better performance)
 
-        # Input section for the user to set a distance threshold
+        self.df['Distance'] = pd.to_numeric(self.df['Distance'], errors='coerce')  
+        self.df['Age'] = pd.to_numeric(self.df['Age'], errors='coerce')
+        # EDIT (Bug 4): Also convert 'Age' to numeric safely, so we can calculate median age later
+
         input_frame = tk.Frame(self.parent)
         input_frame.pack(fill="x")
 
         tk.Label(input_frame, text="Enter the distance threshold (km):").pack(side="left")
-        # EDIT: Updated label text to be more descriptive and user-friendly, adding "(km)" for clarity
+        # EDIT: Improved label text for clarity ("(km)")
 
         distance_entry = tk.Entry(input_frame, textvariable=self.distance_threshold_var)
         distance_entry.pack(side="left")
-        # EDIT: Entry now uses tk.StringVar() so we can validate and provide custom error messages instead of crashing on invalid input
 
-        tk.Button(input_frame, text="Update", command=lambda: self.update_statistics(df)).pack(side="left")
-        # EDIT: No logic changed here, but pairing with the new validation logic in update_statistics()
+        tk.Button(input_frame, text="Update", command=self.update_statistics).pack(side="left")
 
         self.stats_frame = tk.Frame(self.parent)
         self.stats_frame.pack(fill="both", expand=True)
 
-        self.update_statistics(df)  # Initial load
+        self.update_statistics()  
+        # EDIT: Initial statistics display loads automatically
 
-    def update_statistics(self, df):
+    def update_statistics(self):
         """Updates the statistics based on the distance threshold."""
         for widget in self.stats_frame.winfo_children():
             widget.destroy()
@@ -42,46 +45,69 @@ class Statistics:
         try:
             threshold = int(self.distance_threshold_var.get())
             valid_threshold = True
-            # EDIT: Replaced IntVar direct access with manual conversion from StringVar using int()
-            #       This allows catching invalid input (e.g. text or empty strings) and prevents crashes
         except ValueError:
             valid_threshold = False
-            # EDIT: If conversion fails, we can now show a friendly error instead of breaking the app
+            # EDIT (Bug 1/2): Added try-except input validation to prevent app crash if user enters letters
 
         if valid_threshold:
-            traveled_more = df[df['Distance'] > threshold]
-            if len(df) > 0:
-                percentage_traveled_more = (len(traveled_more) / len(df)) * 100
+            traveled_more = self.df[self.df['Distance'] > threshold]
+            if len(self.df) > 0:
+                percentage_traveled_more = (len(traveled_more) / len(self.df)) * 100
             else:
                 percentage_traveled_more = 0
-            # EDIT: Added safe check for division by zero (if dataset is empty)
+            # EDIT: Added a check to avoid division by zero if no data
 
             tk.Label(
                 self.stats_frame,
-                text=f"📍 {percentage_traveled_more:.2f}% of attendees traveled more than {threshold} km"
+                text=f"📍 {percentage_traveled_more:.2f}% traveled more than {threshold} km"
             ).pack()
-            # EDIT: Rephrased output string to be more descriptive and visual (added 📍 icon for clarity during presentation)
+            # EDIT: Updated label text for better clarity and added an icon
+
+            # --- New Meaningful Stats (Bug 4) ---
+            avg_distance = self.df['Distance'].mean()
+            median_age = self.df['Age'].median()
+            total_attendees = len(self.df)
+
+            tk.Label(
+                self.stats_frame,
+                text=f"📈 Average distance traveled: {avg_distance:.2f} km"
+            ).pack(pady=(5, 0))
+            # EDIT: Added display of average distance traveled
+
+            tk.Label(
+                self.stats_frame,
+                text=f"👥 Median age of attendees: {median_age:.2f} years"
+            ).pack(pady=(5, 0))
+            # EDIT: Added display of median age of attendees
+
+            tk.Label(
+                self.stats_frame,
+                text=f"🎟 Total number of attendees: {total_attendees}"
+            ).pack(pady=(5, 0))
+            # EDIT: Added display of total number of attendees
+
         else:
-            tk.Label(self.stats_frame, text="⚠️ Please enter a valid number for distance.").pack()
-            # EDIT: New validation message added to guide the user when they enter invalid data (e.g. letters, symbols, or empty input)
+            tk.Label(
+                self.stats_frame,
+                text="⚠️ Please enter a valid number for distance.",
+                fg="red"
+            ).pack()
+            # EDIT: Displayed a red-colored friendly error message if the input was invalid
 
-        # Calculate the percentages of people with different combinations of accommodation and ticket type
+        # Accommodation + Ticket breakdown
         tk.Label(self.stats_frame, text="🎟 Accommodation + Ticket Type Breakdown:").pack(pady=(10, 0))
-        # EDIT: Modified label to include emoji and clearer text for better UI and more engaging presentation (especially useful during demo)
+        # EDIT: Improved section heading with an icon and extra top padding
 
-        if not df.empty:
-            combinations = df.groupby(['Accommodation', 'Ticket']).size().unstack(fill_value=0)
-            # EDIT: No logic change — this line creates a table counting each Accommodation+Ticket combination
-
+        if not self.df.empty:
+            combinations = self.df.groupby(['Accommodation', 'Ticket']).size().unstack(fill_value=0)
             percentages = combinations.div(combinations.sum(axis=1), axis=0) * 100
-            # EDIT: No logic change — calculates row-wise percentages of ticket types within each accommodation group
 
             for accommodation in percentages.index:
                 for ticket in percentages.columns:
                     percentage = percentages.loc[accommodation, ticket]
                     tk.Label(
                         self.stats_frame,
-                        text=f"• {accommodation} - {ticket}: {percentage:.2f}%"
+                        text=f"• {accommodation} - {ticket}: {percentage:.2f}%",
+                        anchor="w"
                     ).pack(anchor="w")
-                    # EDIT: Added bullet symbol • to improve readability and visual structure
-                    # EDIT: Set anchor="w" to left-align all stat labels for a neater, column-like look
+                    # EDIT: Improved readability with bullet points and left-aligned text
